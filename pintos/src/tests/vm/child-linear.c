@@ -18,7 +18,6 @@ main (int argc, char *argv[])
   const char *key = argv[argc - 1];
   struct arc4 arc4;
   size_t i;
-
   /* Encrypt zeros. */
   arc4_init (&arc4, key, strlen (key));
   arc4_crypt (&arc4, buf, SIZE);

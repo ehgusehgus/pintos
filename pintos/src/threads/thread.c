@@ -11,8 +11,10 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "lib/kernel/list.h"
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "vm/frame.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -177,6 +179,7 @@ thread_create (const char *name, int priority,
 
   /* Allocate thread. */
   t = palloc_get_page (PAL_ZERO);
+  
   if (t == NULL)
     return TID_ERROR;
 
@@ -245,9 +248,17 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered(&ready_list, &t->elem, thread_priority_is_bigger, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
+
+  if(idle_thread != thread_current()){
+    if(t->priority > thread_current()->priority){
+      thread_yield();
+    }
+  }
+
+
 }
 
 /* Returns the name of the running thread. */
@@ -315,8 +326,8 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+  if (cur != idle_thread)
+    list_insert_ordered(&ready_list, &cur->elem, thread_priority_is_bigger, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -343,7 +354,18 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  if(thread_current()->priority > thread_current()->priority_before_donation){
+    thread_current()->priority_before_donation = new_priority;
+  }
+  else if(thread_current()->priority ==  thread_current()->priority_before_donation){
+    thread_current()->priority_before_donation = new_priority;
+    thread_current()->priority = new_priority;
+  }
+  else {
+    thread_current ()->priority = new_priority;
+  }
+
+  thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -390,7 +412,16 @@ thread_wake_up_tick_is_smaller(const struct list_elem *first_elem, const struct 
 {
   struct thread *first_thread = list_entry(first_elem, struct thread, elem);
   struct thread *second_thread = list_entry(second_elem, struct thread, elem);
-  return first_thread->time_to_wake_up > second_thread->time_to_wake_up;
+  return first_thread->time_to_wake_up < second_thread->time_to_wake_up;
+}
+
+/* Depends which thread has bigger priority */
+bool
+thread_priority_is_bigger(const struct list_elem *first_elem, const struct list_elem *second_elem, void *aux)
+{
+  struct thread *first_thread = list_entry(first_elem, struct thread, elem);
+  struct thread *second_thread = list_entry(second_elem, struct thread, elem);
+  return first_thread->priority > second_thread->priority;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -436,6 +467,7 @@ static void
 kernel_thread (thread_func *function, void *aux) 
 {
   ASSERT (function != NULL);
+  //printf("DDD\n");
 
   intr_enable ();       /* The scheduler runs with interrupts off. */
   function (aux);       /* Execute the thread function. */
@@ -477,6 +509,19 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->priority_before_donation = priority;
+  t->exit_once = true;
+  sema_init(&t->wait, 0);
+  sema_init(&t->wait2, 0);
+  t->load_success = true;
+  sema_init(&t->wait_load, 0);
+  list_init(&t->lock_list_which_thread_hold);
+  list_init(&t->lock_which_thread_waiting);
+  list_init(&t->open_file_list);
+<<<<<<< HEAD
+  list_init(&t->mmap_descriptor_list);
+=======
+>>>>>>> a7411f174dcd283c0088ab0e1fe146a560c06410
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
 }
@@ -590,7 +635,22 @@ allocate_tid (void)
 
   return tid;
 }
-
+
+struct thread *
+find_thread_using_tid(tid_t input_tid) {
+  struct list_elem *e;
+
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if(t->tid == input_tid){
+        return t;
+      }
+    }
+    return NULL;
+}
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);

@@ -5,6 +5,7 @@
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "threads/malloc.h"
+#include "threads/thread.h"
 
 /* A directory. */
 struct dir 
@@ -26,8 +27,121 @@ struct dir_entry
 bool
 dir_create (block_sector_t sector, size_t entry_cnt)
 {
-  return inode_create (sector, entry_cnt * sizeof (struct dir_entry));
+
+  if(!inode_create (sector, entry_cnt * sizeof (struct dir_entry), true))
+    return false;
+
+  //struct dir * dir = dir_open(inode_open(sector));
+  struct dir_entry e;
+  struct inode * inode;
+  e.inode_sector= sector;
+  e.in_use = true;
+  inode = inode_open(sector);
+  inode_write_at(inode, &e,sizeof e , 0);
+  inode_close(inode);
+  //dir_close(dir);
+
+  return true;
 }
+
+void parse_path(char *name, char * path, char * file_name){
+
+  char *token, *save_ptr;
+  char *prev_tok= NULL;
+  char * inter = (char *) malloc(sizeof(char)*strlen(name)+1);
+  memcpy(inter, name,sizeof(char)*strlen(name)+1);
+  char * path_inter = path;
+
+  if(strlen(name)==0){
+    file_name = name;
+    *(path) = '\0';
+    return;
+  }
+
+  if(*name =='/'){
+    *path_inter = '/';
+    path_inter +=1;
+  }
+
+  for(token = strtok_r (inter, "/", &save_ptr) ; token != NULL; token = strtok_r (NULL, "/", &save_ptr)){
+    if(prev_tok != NULL){
+      memcpy(path_inter, prev_tok, strlen(prev_tok));
+      *(path_inter+strlen(prev_tok)) = '/';
+      path_inter = path_inter+strlen(prev_tok)+1;  
+    }
+    prev_tok = token;
+  }
+
+  *(path_inter) = '\0';
+  if(prev_tok != NULL)
+    memcpy(file_name,prev_tok, strlen(prev_tok)+1);
+  else
+    *(file_name) ='\0';  
+}
+
+struct dir *
+dir_open_sub(char * path){
+  struct dir * cur_dir;
+  if(strlen(path) == 0){
+    if(thread_current()->cur_dir == NULL){
+      cur_dir=dir_open_root();
+    }
+    else{
+      cur_dir = dir_reopen(thread_current()->cur_dir);
+    }
+
+    if(inode_get_removed(cur_dir->inode)){
+      dir_close(cur_dir);
+      return NULL;
+    }
+    return cur_dir;
+  }
+
+  if(*path == '/'){
+    cur_dir = dir_open_root();
+  }
+  else{
+    if(thread_current()->cur_dir == NULL){
+      cur_dir = dir_open_root();
+    }
+    else{
+      // printf("%d\n", thread_current()->tid);
+      // printf("%x\n", thread_current()->cur_dir);
+      // printf("%x\n", inode_get_inumber(thread_current()->cur_dir->inode));
+      cur_dir = dir_reopen(thread_current()->cur_dir);
+    }
+  }
+
+  char *token, *save_ptr;
+  // struct dir_entry e;
+  // size_t ofs;
+  // for (ofs = 0; inode_read_at (cur_dir->inode, &e, sizeof e, ofs) == sizeof e;
+  //      ofs += sizeof e){
+  //      printf("%s %d %d\n", e.name, e.inode_sector, e.in_use); 
+  //  }
+
+  for (token = strtok_r (path, "/", &save_ptr); token != NULL; token = strtok_r (NULL, "/", &save_ptr)){
+    struct inode *inode =NULL;
+    if(!dir_lookup(cur_dir, token, &inode)){
+      dir_close(cur_dir);
+      return NULL;
+    }
+    dir_close(cur_dir);
+    cur_dir = dir_open(inode);
+    if(cur_dir == NULL){
+      dir_close(cur_dir);
+      return NULL;
+    }
+  }
+
+  if(inode_get_removed(cur_dir->inode)){
+    dir_close(cur_dir);
+    return NULL;
+  }
+  return cur_dir;
+}
+
+
 
 /* Opens and returns the directory for the given INODE, of which
    it takes ownership.  Returns a null pointer on failure. */
@@ -38,7 +152,7 @@ dir_open (struct inode *inode)
   if (inode != NULL && dir != NULL)
     {
       dir->inode = inode;
-      dir->pos = 0;
+      dir->pos = sizeof(struct dir_entry);
       return dir;
     }
   else
@@ -98,7 +212,7 @@ lookup (const struct dir *dir, const char *name,
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
-  for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+  for (ofs = sizeof e; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
        ofs += sizeof e) 
     if (e.in_use && !strcmp (name, e.name)) 
       {
@@ -108,6 +222,7 @@ lookup (const struct dir *dir, const char *name,
           *ofsp = ofs;
         return true;
       }
+
   return false;
 }
 
@@ -124,7 +239,14 @@ dir_lookup (const struct dir *dir, const char *name,
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
-  if (lookup (dir, name, &e, NULL))
+  if(strcmp(name,".") == 0){
+    *inode = inode_reopen(dir->inode);
+  }
+  else if(strcmp(name,"..") == 0){
+    inode_read_at(dir->inode, &e, sizeof(struct dir_entry), 0);
+    *inode = inode_open(e.inode_sector);
+  }
+  else if (lookup (dir, name, &e, NULL))
     *inode = inode_open (e.inode_sector);
   else
     *inode = NULL;
@@ -156,6 +278,15 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   if (lookup (dir, name, NULL, NULL))
     goto done;
 
+  struct inode * inode = inode_open(inode_sector);
+  if(inode_get_isdir(inode)){
+    struct dir_entry e2;
+    e2.inode_sector= inode_get_inumber(dir->inode);
+    e2.in_use = true;
+    inode_write_at(inode, &e2,sizeof e2 , 0);
+  }
+  inode_close(inode);
+
   /* Set OFS to offset of free slot.
      If there are no free slots, then it will be set to the
      current end-of-file.
@@ -170,6 +301,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
 
   /* Write slot. */
   e.in_use = true;
+
   strlcpy (e.name, name, sizeof e.name);
   e.inode_sector = inode_sector;
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
@@ -193,18 +325,33 @@ dir_remove (struct dir *dir, const char *name)
   ASSERT (name != NULL);
 
   /* Find directory entry. */
+
   if (!lookup (dir, name, &e, &ofs))
     goto done;
-
   /* Open inode. */
   inode = inode_open (e.inode_sector);
   if (inode == NULL)
     goto done;
 
+  if(inode_get_isdir(inode)){
+    struct dir * dir2 = dir_open(inode);
+    off_t ofs2;
+    for (ofs2 = sizeof e; inode_read_at (dir2->inode, &e, sizeof e, ofs2) == sizeof e;
+       ofs2 += sizeof e){ 
+      if (e.in_use){
+        dir_close(dir2);
+        goto done;
+      }
+    }
+    dir_close(dir2);
+  }
+
   /* Erase directory entry. */
   e.in_use = false;
+
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
     goto done;
+
 
   /* Remove inode. */
   inode_remove (inode);

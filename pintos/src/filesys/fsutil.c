@@ -7,6 +7,7 @@
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "filesys/cache.h"
 #include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/vaddr.h"
@@ -118,7 +119,7 @@ fsutil_extract (char **argv UNUSED)
           printf ("Putting '%s' into the file system...\n", file_name);
 
           /* Create destination file. */
-          if (!filesys_create (file_name, size))
+          if (!filesys_create (file_name, size,false))
             PANIC ("%s: create failed", file_name);
           dst = filesys_open (file_name);
           if (dst == NULL)
@@ -166,6 +167,8 @@ fsutil_extract (char **argv UNUSED)
 void
 fsutil_append (char **argv)
 {
+  flush_once();
+
   static block_sector_t sector = 0;
 
   const char *file_name = argv[1];
@@ -186,7 +189,6 @@ fsutil_append (char **argv)
   if (src == NULL)
     PANIC ("%s: open failed", file_name);
   size = file_length (src);
-
   /* Open target block device. */
   dst = block_get_role (BLOCK_SCRATCH);
   if (dst == NULL)

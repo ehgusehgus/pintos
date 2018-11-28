@@ -99,7 +99,6 @@ test_sleep (int thread_cnt, int iterations)
   /* Acquire the output lock in case some rogue thread is still
      running. */
   lock_acquire (&test.output_lock);
-
   /* Print completion order. */
   product = 0;
   for (op = output; op < test.output_pos; op++) 
@@ -121,7 +120,6 @@ test_sleep (int thread_cnt, int iterations)
         fail ("thread %d woke up out of order (%d > %d)!",
               t->id, product, new_prod);
     }
-
   /* Verify that we had the proper number of wakeups. */
   for (i = 0; i < thread_cnt; i++)
     if (threads[i].iterations != iterations)

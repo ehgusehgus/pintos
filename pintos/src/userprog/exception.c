@@ -4,6 +4,14 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "userprog/syscall.h"
+#include "vm/page.h"
+<<<<<<< HEAD
+#include "threads/vaddr.h"
+
+static int max_stack = 8*1024*1024;
+=======
+>>>>>>> a7411f174dcd283c0088ab0e1fe146a560c06410
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -139,6 +147,7 @@ page_fault (struct intr_frame *f)
   /* Turn interrupts back on (they were only off so that we could
      be assured of reading CR2 before it changed). */
   intr_enable ();
+  //printf("%d , %x\n", thread_current()->tid, pg_round_down(fault_addr));
 
   /* Count page faults. */
   page_fault_cnt++;
@@ -147,6 +156,60 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
+
+<<<<<<< HEAD
+  if(not_present == false){
+    our_exit(-1);
+  }
+  //printf("%x\n", fault_addr); 
+  //printf("%d\n", thread_current()->tid);
+
+  // if(lock_held_by_current_thread(&syscall_lock)){
+  //   lock_release(&syscall_lock);
+  //   if(load_from_supplement_page_table(fault_addr)){
+  //     lock_acquire(&syscall_lock);
+  //     return;
+  //   }
+  //   lock_acquire(&syscall_lock);
+  // }
+  // else{
+  //   if(load_from_supplement_page_table(fault_addr)){
+  //     return;
+  //   }
+  // }
+  if(load_from_supplement_page_table(fault_addr, false)){
+    return;
+  }
+
+  uint8_t * esp;
+  if(user){
+    esp =f->esp; 
+  }
+  else
+    esp = thread_current()->cur_esp;
+
+  bool is_stack_fault, in_stack;
+
+  in_stack= (fault_addr < PHYS_BASE && PHYS_BASE - max_stack <= fault_addr);
+  is_stack_fault= (fault_addr == esp - 4 || fault_addr == esp - 32) || fault_addr >= esp ;
+  if (in_stack&& is_stack_fault) {
+    supplement_page_table_insert(pg_round_down(fault_addr), NULL,3, NULL, NULL, NULL, NULL,true);
+=======
+  if(load_from_supplement_page_table(fault_addr)){
+>>>>>>> a7411f174dcd283c0088ab0e1fe146a560c06410
+    return;
+  }
+
+  if(user == false){
+    f->eip = (void *)f->eax;
+    f->eax = 0xffffffff;
+    return;
+  }
+
+#ifdef USERPROG
+    our_exit(-1);
+#endif
+
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
@@ -158,4 +221,3 @@ page_fault (struct intr_frame *f)
           user ? "user" : "kernel");
   kill (f);
 }
-

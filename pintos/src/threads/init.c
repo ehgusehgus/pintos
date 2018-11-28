@@ -37,7 +37,10 @@
 #include "filesys/filesys.h"
 #include "filesys/fsutil.h"
 #endif
-
+#ifdef VM
+#include "vm/frame.h"
+#include "vm/swap.h"
+#endif
 /* Page directory with kernel mappings only. */
 uint32_t *init_page_dir;
 
@@ -87,6 +90,10 @@ main (void)
 
   /* Initialize ourselves as a thread so we can use locks,
      then enable console locking. */
+<<<<<<< HEAD
+=======
+  frame_table_init();
+>>>>>>> a7411f174dcd283c0088ab0e1fe146a560c06410
   thread_init ();
   console_init ();  
 
@@ -288,6 +295,10 @@ run_task (char **argv)
   process_wait (process_execute (task));
 #else
   run_test (task);
+<<<<<<< HEAD
+
+=======
+>>>>>>> a7411f174dcd283c0088ab0e1fe146a560c06410
 #endif
   printf ("Execution of '%s' complete.\n", task);
 }
@@ -395,6 +406,11 @@ locate_block_devices (void)
   locate_block_device (BLOCK_SCRATCH, scratch_bdev_name);
 #ifdef VM
   locate_block_device (BLOCK_SWAP, swap_bdev_name);
+<<<<<<< HEAD
+  frame_table_init();
+  swap_table_init();
+=======
+>>>>>>> a7411f174dcd283c0088ab0e1fe146a560c06410
 #endif
 }
 

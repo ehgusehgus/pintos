@@ -4,7 +4,13 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-
+#include "threads/synch.h"
+#include "filesys/filesys.h"
+#include "lib/kernel/hash.h"
+<<<<<<< HEAD
+#include "filesys/directory.h"
+=======
+>>>>>>> a7411f174dcd283c0088ab0e1fe146a560c06410
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -93,16 +99,55 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
+    struct semaphore wait;
+
+    struct semaphore wait2;
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+
+    struct thread *parent_thread;
+    
+    int exit_status;
+
+    bool exit_once;
+
+    bool load_success;
+
+    struct semaphore wait_load;
+
+    struct list open_file_list;
+    struct file * exec_file;
 #endif
 
-    /* Owned by thread.c. */
-    unsigned magic;                     /* Detects stack overflow. */
+#ifdef VM
+    struct hash supplement_page_table;
+<<<<<<< HEAD
+    
+    struct list mmap_descriptor_list; 
 
+    uint8_t * cur_esp; 
+#endif
+
+    struct dir * cur_dir;
+=======
+#endif
+
+>>>>>>> a7411f174dcd283c0088ab0e1fe146a560c06410
     /* Used in devices/timer.c -> timer_sleep() */
     int64_t time_to_wake_up;            /* Store time ticks which thread must wake up */
+
+    /* Used in synch.c */
+    int priority_before_donation;       /* Store it's undonated priority */
+
+    /* Used in synch.c */
+    struct list lock_list_which_thread_hold; /* store lock list which thread is owning */
+
+    /* Used in synch.c */
+    struct list lock_which_thread_waiting; /* store lock's list which thread is waiting */
+    
+    /* Owned by thread.c. */
+    unsigned magic;                     /* Detects stack overflow. */
   };
 
 /* If false (default), use round-robin scheduler.
@@ -143,5 +188,10 @@ int thread_get_load_avg (void);
 
 /* Depends which thread has smaller time_to_wake_up */
 bool thread_wake_up_tick_is_smaller(const struct list_elem *, const struct list_elem *, void *);
+
+/* Depends which thread has bigger priority */
+bool thread_priority_is_bigger(const struct list_elem *, const struct list_elem *, void *);
+
+struct thread * find_thread_using_tid(tid_t input_tid);
 
 #endif /* threads/thread.h */
